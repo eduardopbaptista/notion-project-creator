@@ -106,14 +106,7 @@
 
 <div class="card">
 
-  <div class="card-section">
-    <div class="section-label">API Configuration</div>
-    <div class="field">
-      <label for="apiToken">Notion Integration Token</label>
-      <input type="text" id="apiToken" placeholder="secret_..." autocomplete="off" />
-      <div class="hint">Token da integração Notion com acesso às databases de Projects e Tasks.</div>
-    </div>
-  </div>
+
 
   <div class="card-section">
     <div class="section-label">New Event</div>
@@ -266,11 +259,11 @@ async function setParentTask(token, childId, parentId) {
 }
 
 async function createTasks() {
-  const token = document.getElementById('apiToken').value.trim();
+  const token = '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';
   const code = document.getElementById('eventCode').value.trim();
   const projectName = document.getElementById('projectName').value.trim();
   const eventDate = document.getElementById('eventDate').value;
-  if (!token || !code || !projectName || !eventDate) { setStatus('Please fill in all fields before continuing.', 'error'); return; }
+  if (!code || !projectName || !eventDate) { setStatus('Please fill in all fields before continuing.', 'error'); return; }
   const btn = document.getElementById('createBtn');
   btn.disabled = true; btn.textContent = 'Creating tasks…';
   document.getElementById('statusBox').className = 'status-box show info';
