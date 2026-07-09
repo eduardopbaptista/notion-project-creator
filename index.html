@@ -225,9 +225,40 @@ document.getElementById('eventCode').addEventListener('input', renderPreview);
 document.getElementById('eventDate').addEventListener('change', renderPreview);
 renderPreview();
 
-function calcDueDate(eventDateStr, days) {
+const NEAREST_FRIDAY_TASKS = [
+  'Confirmed Programme Deadline',
+  'Tentative Programme Deadline',
+  'Deadline to clean Tier 1',
+];
+
+function adjustForWeekend(date) {
+  const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+  if (day === 6) date.setDate(date.getDate() - 1); // Saturday → Friday
+  if (day === 0) date.setDate(date.getDate() - 2); // Sunday → Friday
+  return date;
+}
+
+function nearestFriday(date) {
+  const day = date.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+  if (day === 5) return date; // already Friday
+  // days to previous Friday
+  const daysToPrev = day === 0 ? 2 : day + 2 <= 7 ? day - 5 + 7 : day - 5;
+  const prev = new Date(date); prev.setDate(date.getDate() - ((day + 2) % 7));
+  // days to next Friday
+  const next = new Date(date); next.setDate(date.getDate() + ((5 - day + 7) % 7));
+  // return whichever is closer (prefer previous on tie)
+  return (date - prev) <= (next - date) ? prev : next;
+}
+
+function calcDueDate(eventDateStr, days, taskName) {
   if (days === null || !eventDateStr) return null;
   const d = new Date(eventDateStr + 'T12:00:00'); d.setDate(d.getDate() - days);
+  if (taskName && NEAREST_FRIDAY_TASKS.some(n => taskName.includes(n))) {
+    const nf = nearestFriday(d);
+    d.setTime(nf.getTime());
+  } else {
+    adjustForWeekend(d);
+  }
   return d.toISOString().split('T')[0];
 }
 function notionHeaders(token) { return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Notion-Version': NOTION_VERSION }; }
@@ -259,16 +290,47 @@ async function setParentTask(token, childId, parentId) {
 }
 
 async function createTasks() {
+  const DEMO_MODE = false;
   const token = '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';
   const code = document.getElementById('eventCode').value.trim();
   const projectName = document.getElementById('projectName').value.trim();
   const eventDate = document.getElementById('eventDate').value;
   if (!code || !projectName || !eventDate) { setStatus('Please fill in all fields before continuing.', 'error'); return; }
   const btn = document.getElementById('createBtn');
-  btn.disabled = true; btn.textContent = 'Creating tasks…';
+  btn.disabled = true; btn.textContent = DEMO_MODE ? 'Simulating…' : 'Creating tasks…';
   document.getElementById('statusBox').className = 'status-box show info';
   document.getElementById('statusBox').innerHTML = '';
   setProgress(0);
+
+  if (DEMO_MODE) {
+    // ── SIMULATION MODE ──────────────────────────────────────────
+    const totalTasks = TASK_TEMPLATE.reduce((sum, g) => sum + 1 + g.tasks.length, 0);
+    let done = 0;
+    log('🔵', '<strong>[DEMO]</strong> Simulating project creation: "<strong>' + projectName + '</strong>"');
+    await new Promise(r => setTimeout(r, 400));
+    setProgress(10);
+    for (const group of TASK_TEMPLATE) {
+      const parentTaskName = code + ' - ' + group.parentName;
+      log('▸', 'Parent task: <strong>' + parentTaskName + '</strong>');
+      await new Promise(r => setTimeout(r, 200));
+      done++; setProgress(10 + Math.round((done / totalTasks) * 85));
+      for (const t of group.tasks) {
+        const taskName = code + ' ' + t.name;
+        const dueDate = calcDueDate(eventDate, t.daysBeforeEvent, t.name);
+        const dueTxt = dueDate ? new Date(dueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'sem data';
+        log('  ✓', taskName + ' <span style="color:rgba(255,255,255,0.35);font-size:11px;">(' + dueTxt + ')</span>');
+        await new Promise(r => setTimeout(r, 80));
+        done++; setProgress(10 + Math.round((done / totalTasks) * 85));
+      }
+    }
+    setProgress(100);
+    document.getElementById('statusBox').className = 'status-box show success';
+    document.getElementById('statusBox').innerHTML = '<strong>✅ Simulação concluída — ' + done + ' tasks seriam criadas.</strong><br><span style="font-size:11px;opacity:0.8;">Tudo certo! Quando o token estiver conectado, as tasks serão criadas automaticamente no Notion.</span>';
+    btn.disabled = false; btn.textContent = 'Simular novamente';
+    return;
+  }
+
+  // ── REAL MODE ────────────────────────────────────────────────
   try {
     log('◎', 'Searching for project "<strong>' + projectName + '</strong>"…');
     const { id: projectId, created } = await findOrCreateProject(token, projectName);
@@ -283,7 +345,7 @@ async function createTasks() {
       done++; setProgress(10 + Math.round((done / totalTasks) * 85));
       for (const t of group.tasks) {
         const taskName = code + ' ' + t.name;
-        const dueDate = calcDueDate(eventDate, t.daysBeforeEvent);
+        const dueDate = calcDueDate(eventDate, t.daysBeforeEvent, t.name);
         const childId = await createTask(token, taskName, dueDate, projectId);
         await setParentTask(token, childId, parentId);
         const dueTxt = dueDate ? new Date(dueDate + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : 'no date';
